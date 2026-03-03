@@ -27,9 +27,33 @@ const PRIORITY: Record<number, string> = {
 export default function ExperimentCard({ experiment: exp, pageUrl, onUpdate }: Props) {
   const [showPreview, setShowPreview] = useState(false)
   const [showCode, setShowCode] = useState(false)
+  const [feedback, setFeedback] = useState('')
+  const [refining, setRefining] = useState(false)
 
   const isApproved = exp.status === 'approved'
   const isRejected = exp.status === 'rejected'
+
+  const handleRefine = async () => {
+    if (!feedback.trim() || refining) return
+    setRefining(true)
+    try {
+      const res = await fetch('/api/refine', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ experiment: exp, feedback }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error ?? 'Refine failed')
+      // Apply updated fields and clear screenshots so user re-previews
+      onUpdate({ ...data.experiment, screenshots: undefined })
+      setFeedback('')
+      setShowPreview(false)
+    } catch (e) {
+      console.error(e)
+    } finally {
+      setRefining(false)
+    }
+  }
 
   return (
     <div
@@ -111,29 +135,54 @@ export default function ExperimentCard({ experiment: exp, pageUrl, onUpdate }: P
 
       {/* Actions */}
       {!isRejected && (
-        <div className="flex gap-2 border-t border-gray-800 pt-3">
-          {!isApproved ? (
-            <>
+        <div className="flex flex-col gap-3 border-t border-gray-800 pt-3">
+          {/* Approve / Reject */}
+          <div className="flex gap-2">
+            {!isApproved ? (
+              <>
+                <button
+                  onClick={() => onUpdate({ status: 'approved' })}
+                  className="flex-1 rounded-lg bg-emerald-700 py-1.5 text-xs font-medium transition-colors hover:bg-emerald-600"
+                >
+                  Approve
+                </button>
+                <button
+                  onClick={() => onUpdate({ status: 'rejected' })}
+                  className="flex-1 rounded-lg bg-gray-800 py-1.5 text-xs font-medium text-gray-400 transition-colors hover:bg-gray-700"
+                >
+                  Reject
+                </button>
+              </>
+            ) : (
               <button
-                onClick={() => onUpdate({ status: 'approved' })}
-                className="flex-1 rounded-lg bg-emerald-700 py-1.5 text-xs font-medium transition-colors hover:bg-emerald-600"
+                onClick={() => onUpdate({ status: 'pending' })}
+                className="text-xs text-gray-600 hover:text-gray-400 transition-colors"
               >
-                Approve
+                Undo approval
               </button>
+            )}
+          </div>
+
+          {/* Refine with natural language */}
+          {!isApproved && (
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={feedback}
+                onChange={e => setFeedback(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && handleRefine()}
+                placeholder="Suggest a change… e.g. 'try finding the button by text content'"
+                className="flex-1 rounded-lg border border-gray-700 bg-gray-800 px-3 py-1.5 text-xs placeholder-gray-600 focus:border-gray-500 focus:outline-none"
+                disabled={refining}
+              />
               <button
-                onClick={() => onUpdate({ status: 'rejected' })}
-                className="flex-1 rounded-lg bg-gray-800 py-1.5 text-xs font-medium text-gray-400 transition-colors hover:bg-gray-700"
+                onClick={handleRefine}
+                disabled={!feedback.trim() || refining}
+                className="rounded-lg bg-gray-700 px-3 py-1.5 text-xs font-medium text-gray-300 transition-colors hover:bg-gray-600 disabled:cursor-not-allowed disabled:opacity-40"
               >
-                Reject
+                {refining ? '…' : 'Refine →'}
               </button>
-            </>
-          ) : (
-            <button
-              onClick={() => onUpdate({ status: 'pending' })}
-              className="text-xs text-gray-600 hover:text-gray-400 transition-colors"
-            >
-              Undo approval
-            </button>
+            </div>
           )}
         </div>
       )}

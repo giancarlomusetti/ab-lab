@@ -88,7 +88,7 @@ export default function VariantToggle({
     <div className="space-y-2">
       {shots.unchanged && (
         <div className="rounded-lg bg-yellow-500/10 border border-yellow-500/20 p-2.5 text-xs text-yellow-400">
-          ⚠ Injection ran but nothing changed — selector may not match the rendered DOM.
+          ⚠ Variant looks identical to control. The selector may not match the live page. Use 'Refine' below to describe what should change.
           {shots.injectionError && <span className="block mt-1 text-yellow-600">{shots.injectionError}</span>}
         </div>
       )}

@@ -47,11 +47,28 @@ Generate exactly 5 experiment hypotheses. For each, return a JSON object with th
 Focus on: CTA copy, social proof, pricing clarity, onboarding friction, trust signals.
 Prioritize low-effort, high-priority experiments first.`
 
+const CRITIC_SYSTEM = `You are a QA reviewer for A/B experiments. Given a webpage's rendered HTML and a list of proposed experiments, validate each one and fix problems before they reach the user.
+
+For each experiment check:
+1. Does the element being modified actually exist in the HTML? If not, rewrite the experiment to target something that does exist.
+2. Is the proposed variant genuinely different from the current page state? (e.g. do not suggest adding an accordion if one already exists, do not reference a free trial if there is no free trial on the page)
+3. Does the injection_code use selectors likely to match real elements in the HTML?
+
+Return the same JSON array format. Fix broken experiments by rewriting them. Remove unfixable ones. It is fine to return fewer than 5.
+Return ONLY a valid JSON array. No markdown, no explanation, no code fences.`
+
+const CRITIC_PROMPT = (experiments: object[], html: string) =>
+  `Here are the proposed experiments:\n${JSON.stringify(experiments, null, 2)}\n\nHere is the rendered page HTML (may be truncated):\n${html}`
+
+function parseJSON(raw: string): object[] | null {
+  const cleaned = raw.replace(/^` + '```' + `(?:json)?\n?/m, '').replace(/\n?` + '```' + `$/m, '').trim()
+  try { return JSON.parse(cleaned) as object[] } catch { return null }
+}
+
 export async function POST(req: NextRequest) {
   const { url } = await req.json()
   if (!url) return NextResponse.json({ error: 'URL is required' }, { status: 400 })
 
-  // Use Playwright to get the fully rendered DOM — raw fetch misses React hydration
   let html = ''
   let browser = null
   try {
@@ -62,7 +79,7 @@ export async function POST(req: NextRequest) {
     })
     const page = await context.newPage()
     await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 })
-    await page.waitForTimeout(2500) // let React hydrate
+    await page.waitForTimeout(2500)
     html = await page.content()
     await browser.close()
     browser = null
@@ -71,9 +88,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: `Could not render ${url}: ${e instanceof Error ? e.message : e}` }, { status: 400 })
   }
 
-  // Trim to ~80k chars to stay within token budget
   const truncated = html.slice(0, 80000)
 
+  // Step 1: Generate experiments
   let raw = ''
   try {
     const completion = await client.chat.completions.create({
@@ -87,21 +104,30 @@ export async function POST(req: NextRequest) {
     raw = completion.choices[0]?.message?.content ?? ''
     if (!raw) throw new Error('Empty response from OpenAI')
   } catch (e) {
-    const msg = e instanceof Error ? e.message : 'OpenAI API error'
-    return NextResponse.json({ error: msg }, { status: 500 })
+    return NextResponse.json({ error: e instanceof Error ? e.message : 'OpenAI API error' }, { status: 500 })
   }
 
-  // Strip markdown fences if Claude wrapped the JSON
-  const cleaned = raw.replace(/^```(?:json)?\n?/m, '').replace(/\n?```$/m, '').trim()
+  const parsed = parseJSON(raw)
+  if (!parsed) return NextResponse.json({ error: 'Failed to parse experiments as JSON', raw }, { status: 500 })
 
-  let experiments: Omit<Experiment, 'id' | 'status'>[]
+  // Step 2: Critic pass — validate and fix against the real HTML
+  let validated = parsed
   try {
-    experiments = JSON.parse(cleaned)
+    const criticCompletion = await client.chat.completions.create({
+      model: 'gpt-4o',
+      max_tokens: 8096,
+      messages: [
+        { role: 'system', content: CRITIC_SYSTEM },
+        { role: 'user', content: CRITIC_PROMPT(parsed, truncated) },
+      ],
+    })
+    const criticRaw = criticCompletion.choices[0]?.message?.content ?? ''
+    validated = parseJSON(criticRaw) ?? parsed
   } catch {
-    return NextResponse.json({ error: 'Failed to parse Claude response as JSON', raw }, { status: 500 })
+    // Critic failed — fall back to original unvalidated experiments
   }
 
-  const result: Experiment[] = experiments.map(exp => ({
+  const result: Experiment[] = (validated as Omit<Experiment, 'id' | 'status'>[]).map(exp => ({
     ...exp,
     id: randomUUID(),
     status: 'pending',
