@@ -1,10 +1,10 @@
-import OpenAI from 'openai'
+import Anthropic from '@anthropic-ai/sdk'
 import { chromium } from 'playwright'
 import { NextRequest, NextResponse } from 'next/server'
 import { Experiment } from '@/lib/types'
 import { randomUUID } from 'crypto'
 
-const client = new OpenAI()
+const client = new Anthropic()
 
 const SYSTEM_PROMPT = `You are a senior growth PM and front-end developer specializing in B2C SaaS conversion optimization.
 
@@ -93,18 +93,18 @@ export async function POST(req: NextRequest) {
   // Step 1: Generate experiments
   let raw = ''
   try {
-    const completion = await client.chat.completions.create({
-      model: 'gpt-4o',
+    const completion = await client.messages.create({
+      model: 'claude-opus-4-6',
       max_tokens: 8096,
+      system: SYSTEM_PROMPT,
       messages: [
-        { role: 'system', content: SYSTEM_PROMPT },
         { role: 'user', content: USER_PROMPT(url, truncated) },
       ],
     })
-    raw = completion.choices[0]?.message?.content ?? ''
-    if (!raw) throw new Error('Empty response from OpenAI')
+    raw = completion.content[0].type === 'text' ? completion.content[0].text : ''
+    if (!raw) throw new Error('Empty response from Claude')
   } catch (e) {
-    return NextResponse.json({ error: e instanceof Error ? e.message : 'OpenAI API error' }, { status: 500 })
+    return NextResponse.json({ error: e instanceof Error ? e.message : 'Claude API error' }, { status: 500 })
   }
 
   const parsed = parseJSON(raw)
@@ -113,15 +113,15 @@ export async function POST(req: NextRequest) {
   // Step 2: Critic pass — validate and fix against the real HTML
   let validated = parsed
   try {
-    const criticCompletion = await client.chat.completions.create({
-      model: 'gpt-4o',
+    const criticCompletion = await client.messages.create({
+      model: 'claude-opus-4-6',
       max_tokens: 8096,
+      system: CRITIC_SYSTEM,
       messages: [
-        { role: 'system', content: CRITIC_SYSTEM },
         { role: 'user', content: CRITIC_PROMPT(parsed, truncated) },
       ],
     })
-    const criticRaw = criticCompletion.choices[0]?.message?.content ?? ''
+    const criticRaw = criticCompletion.content[0].type === 'text' ? criticCompletion.content[0].text : ''
     validated = parseJSON(criticRaw) ?? parsed
   } catch {
     // Critic failed — fall back to original unvalidated experiments

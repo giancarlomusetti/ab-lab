@@ -1,8 +1,8 @@
-import OpenAI from 'openai'
+import Anthropic from '@anthropic-ai/sdk'
 import { NextRequest, NextResponse } from 'next/server'
 import { Experiment } from '@/lib/types'
 
-const client = new OpenAI()
+const client = new Anthropic()
 
 const SYSTEM_PROMPT = `You are a growth PM and front-end developer refining an A/B experiment based on user feedback.
 
@@ -27,21 +27,25 @@ export async function POST(req: NextRequest) {
 
   let raw = ''
   try {
-    const completion = await client.chat.completions.create({
-      model: 'gpt-4o',
+    // Strip screenshots (base64 blobs) before sending to Claude — they're irrelevant to refining
+    // experiment logic and would bloat the request beyond the API size limit
+    const { screenshots: _screenshots, ...experimentData } = experiment
+
+    const completion = await client.messages.create({
+      model: 'claude-opus-4-6',
       max_tokens: 4096,
+      system: SYSTEM_PROMPT,
       messages: [
-        { role: 'system', content: SYSTEM_PROMPT },
         {
           role: 'user',
-          content: `Current experiment:\n${JSON.stringify(experiment, null, 2)}\n\nUser feedback: ${feedback}`,
+          content: `Current experiment:\n${JSON.stringify(experimentData, null, 2)}\n\nUser feedback: ${feedback}`,
         },
       ],
     })
-    raw = completion.choices[0]?.message?.content ?? ''
+    raw = completion.content[0].type === 'text' ? completion.content[0].text : ''
     if (!raw) throw new Error('Empty response')
   } catch (e) {
-    return NextResponse.json({ error: e instanceof Error ? e.message : 'OpenAI API error' }, { status: 500 })
+    return NextResponse.json({ error: e instanceof Error ? e.message : 'Claude API error' }, { status: 500 })
   }
 
   const cleaned = raw.replace(/^```(?:json)?\n?/m, '').replace(/\n?```$/m, '').trim()

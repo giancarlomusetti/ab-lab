@@ -1,0 +1,23 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:splice.com)",
+      "Bash(npx playwright install chromium)",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\([k for k in d.get\\(''mcpServers'',{}\\).keys\\(\\)]\\)\")",
+      "Bash(printenv ANTHROPIC_API_KEY)",
+      "Bash(ls /Users/giancarlo/Desktop/Claude_playground/music-tech/ab-lab/.env*)",
+      "mcp__Claude_Preview__preview_start",
+      "Bash(npm install openai)",
+      "Bash(npx tsc --noEmit)",
+      "Bash(git init)",
+      "Bash(git add .env.example .gitignore app/ components/ lib/ next.config.ts package-lock.json package.json postcss.config.js tailwind.config.ts tsconfig.json)",
+      "Bash(git commit:*)",
+      "Bash(gh repo create ab-lab --public --description \"Claude-powered A/B experiment design tool — analyzes any webpage and generates experiment hypotheses with before/after screenshots\" --source /Users/giancarlo/Desktop/Claude_playground/music-tech/ab-lab --remote origin --push)",
+      "Bash(git add README.md)",
+      "Bash(git push)",
+      "Bash(node -e \":*)",
+      "Skill(claude-developer-platform)",
+      "Skill(claude-developer-platform:*)"
+    ]
+  }
+}
