@@ -61,8 +61,13 @@ const CRITIC_PROMPT = (experiments: object[], html: string) =>
   `Here are the proposed experiments:\n${JSON.stringify(experiments, null, 2)}\n\nHere is the rendered page HTML (may be truncated):\n${html}`
 
 function parseJSON(raw: string): object[] | null {
-  const cleaned = raw.replace(/^` + '```' + `(?:json)?\n?/m, '').replace(/\n?` + '```' + `$/m, '').trim()
-  try { return JSON.parse(cleaned) as object[] } catch { return null }
+  try { return JSON.parse(raw.trim()) as object[] } catch {}
+  const start = raw.indexOf('[')
+  const end = raw.lastIndexOf(']')
+  if (start !== -1 && end > start) {
+    try { return JSON.parse(raw.slice(start, end + 1)) as object[] } catch {}
+  }
+  return null
 }
 
 export async function POST(req: NextRequest) {
